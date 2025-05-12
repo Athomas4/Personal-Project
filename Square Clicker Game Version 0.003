@@ -1,0 +1,200 @@
+/*******************************************************************************************
+*///Hit F6 to Test
+
+//M4T2
+//Andrae Thomas
+//3-19-2025
+
+#include "raylib.h"
+#include <stdlib.h>
+#include <stdbool.h>
+#include <time.h>
+
+typedef struct Helper {
+    Vector2 position;
+    bool active;
+    Vector2 targetPosition;  // Store the target position (collect block or grid target)
+    bool trackingCollectBlock;  // Flag to indicate if the helper is tracking a collect block
+    int targetIndex;  // Store the index of the collect block that this helper is targeting
+} Helper;
+
+int main(void)
+{
+    const int screenWidth = 1024;
+    const int screenHeight = 768;
+
+    int tile_width = 80;
+    int tile_length = 60;
+    int tile_height = 40;
+    Color color1 = BLUE;
+
+    int c_x = 0; 
+    int c_y = 0;
+
+    // Box to collect
+    int collect_block_width = 20;
+    int collect_block_height = 20;
+    Vector2 collect_block_position = { (float)(rand() % (screenWidth - collect_block_width)),
+                                       (float)(rand() % (screenHeight - collect_block_height)) };
+    bool collected = false;
+    int points = 0;
+
+    InitWindow(screenWidth, screenHeight, "raylib [core] example - basic window");
+    SetWindowState(FLAG_BORDERLESS_WINDOWED_MODE);
+    SetTargetFPS(60);
+
+    Helper helpers[10];
+    int helperCount = 0;
+    int helperCost = 5;
+
+    // Building position
+    int building_width = 50;
+    int building_height = 50;
+    Vector2 building_position = { 10, screenHeight - building_height - 10 };
+
+    Color helperColor = ORANGE;
+
+    // Menu UI
+    int menu_width = 200;
+    int menu_height = 80;
+    int menu_x = screenWidth - menu_width - 10;
+    int menu_y = screenHeight - menu_height - 10; // Adjusting position so it doesn't overlap
+
+    // Collect blocks array (initially one block)
+    Vector2* collectBlocks = (Vector2*)malloc(sizeof(Vector2));  // Dynamically allocated array
+    int collectBlockCount = 1;
+    collectBlocks[0] = collect_block_position;
+    
+    int upgradeCost = 25;
+
+    // Main game loop
+    while (!WindowShouldClose())
+    {
+        // Player movement
+        if (IsKeyDown(KEY_RIGHT)) c_x += 5;
+        if (IsKeyDown(KEY_LEFT)) c_x -= 5;
+        if (IsKeyDown(KEY_UP)) c_y -= 5;
+        if (IsKeyDown(KEY_DOWN)) c_y += 5;
+
+        // Bounds check
+        if (c_x < 0) c_x = 0;
+        if (c_y < 0) c_y = 0;
+        if (c_x > screenWidth - tile_width) c_x = screenWidth - tile_width;
+        if (c_y > screenHeight - tile_height) c_y = screenHeight - tile_height;
+
+        Rectangle tile = { c_x, c_y, tile_width, tile_height };
+        
+        // Collect block collision check
+        for (int i = 0; i < collectBlockCount; i++) {
+            Rectangle collect_block = { collectBlocks[i].x, collectBlocks[i].y, collect_block_width, collect_block_height };
+            if (CheckCollisionRecs(tile, collect_block)) {
+                collected = true;
+                points += 5;
+                collectBlocks[i].x = (float)(rand() % (screenWidth - collect_block_width));
+                collectBlocks[i].y = (float)(rand() % (screenHeight - collect_block_height));
+            }
+        }
+
+        // Buy Helper
+        if (CheckCollisionPointRec(GetMousePosition(), (Rectangle){ menu_x + 10, menu_y + 10, 180, 40 }) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+            if (points >= helperCost && helperCount < 10) {
+                points -= helperCost;
+                helpers[helperCount].position = building_position;
+                helpers[helperCount].active = true;
+                helpers[helperCount].trackingCollectBlock = false;
+                helpers[helperCount].targetIndex = -1;  // Initially no target
+                helperCount++;
+            }
+        }
+
+        // Upgrade Collect Blocks (Create new collect boxes)
+        if (CheckCollisionPointRec(GetMousePosition(), (Rectangle){ menu_x + 10, menu_y + 50, 180, 40 }) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+            if (points >= upgradeCost) {
+                points -= upgradeCost;
+                collectBlockCount++;  // Increase the number of collect blocks
+
+                // Reallocate memory to accommodate more collect blocks
+                collectBlocks = (Vector2*)realloc(collectBlocks, collectBlockCount * sizeof(Vector2));
+
+                // Spawn a new collect block at a random position
+                collectBlocks[collectBlockCount - 1] = (Vector2){ (float)(rand() % (screenWidth - collect_block_width)), (float)(rand() % (screenHeight - collect_block_height)) };
+            }
+        }
+
+        // Helper logic: Move each helper towards a unique collect block
+        for (int i = 0; i < helperCount; i++) {
+            if (helpers[i].active) {
+                // If the helper does not have a target yet, assign it to a random collect block
+                if (helpers[i].targetIndex == -1) {
+                    // Assign a random target from available collect blocks
+                    helpers[i].targetIndex = rand() % collectBlockCount;
+                }
+
+                // Get the target collect block's position
+                Vector2 target = collectBlocks[helpers[i].targetIndex];
+
+                // Move helpers towards their target collect block
+                if (helpers[i].position.x < target.x)
+                    helpers[i].position.x += 1;
+                if (helpers[i].position.x > target.x)
+                    helpers[i].position.x -= 1;
+                if (helpers[i].position.y < target.y)
+                    helpers[i].position.y += 1;
+                if (helpers[i].position.y > target.y)
+                    helpers[i].position.y -= 1;
+
+                // Check if this helper can collect a collect block
+                Rectangle collect_block = { target.x, target.y, collect_block_width, collect_block_height };
+                if (CheckCollisionRecs((Rectangle){helpers[i].position.x, helpers[i].position.y, 20, 20}, collect_block)) {
+                    points += 5;
+                    // Reassign the target block's position after collection
+                    collectBlocks[helpers[i].targetIndex].x = (float)(rand() % (screenWidth - collect_block_width));
+                    collectBlocks[helpers[i].targetIndex].y = (float)(rand() % (screenHeight - collect_block_height));
+                    // Reset the helper's target to a new block
+                    helpers[i].targetIndex = -1;  // Helper will pick a new target
+                }
+            }
+        }
+
+        // Drawing
+        BeginDrawing();
+        ClearBackground(BLACK);
+
+        DrawRectangle(c_x, c_y, tile_width, tile_height, color1);
+
+        // Draw collect blocks
+        for (int i = 0; i < collectBlockCount; i++) {
+            DrawRectangle((int)collectBlocks[i].x, (int)collectBlocks[i].y, collect_block_width, collect_block_height, RAYWHITE);
+        }
+
+        DrawRectangle((int)building_position.x, (int)building_position.y, building_width, building_height, DARKGRAY);
+        DrawText("Base", (int)building_position.x + 5, (int)building_position.y + 20, 10, WHITE);
+
+        // Draw the menu background
+        DrawRectangle(menu_x, menu_y, menu_width, menu_height, DARKGRAY);
+        DrawRectangle(menu_x + 10, menu_y + 10, 180, 40, BLUE);
+        DrawText("Buy Helper", menu_x + 20, menu_y + 20, 20, WHITE);
+        DrawText(TextFormat("Cost: %d", helperCost), menu_x + 10, menu_y + 50, 15, WHITE);
+        DrawText(TextFormat("Helpers: %d", helperCount), menu_x + 10, menu_y + 70, 15, WHITE);
+
+        // Draw Upgrade button
+        DrawRectangle(menu_x + 10, menu_y + 50, 180, 40, GREEN);
+        DrawText(TextFormat("Upgrade: %d", upgradeCost), menu_x + 20, menu_y + 70, 20, WHITE);
+
+        // Draw helpers
+        for (int i = 0; i < helperCount; i++) {
+            if (helpers[i].active) {
+                DrawRectangle((int)helpers[i].position.x, (int)helpers[i].position.y, 20, 20, helperColor);
+            }
+        }
+
+        DrawText(TextFormat("Points: %d", points), 10, 10, 20, WHITE);
+
+        EndDrawing();
+    }
+
+    free(collectBlocks); // Free the allocated memory for collect blocks
+
+    CloseWindow();  // Close window and OpenGL context
+    return 0;
+}
