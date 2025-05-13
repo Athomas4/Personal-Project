@@ -1,0 +1,597 @@
+/*******************************************************************************************
+
+* M4T2: Resource Collection Game
+
+* Author: Andrae Thomas
+
+*
+
+* Description: A simple clicker-style game where the player collects resources,
+
+* purchases helpers to automate collection, and upgrades to spawn more resources.
+
+*
+
+* Controls:
+
+* - Arrow keys: Move first player
+
+* - WASD keys: Move second player (when Ambidexterity is active)
+
+* - Mouse: Interact with menu buttons
+
+*******************************************************************************************/
+
+ 
+
+#include "raylib.h"
+
+#include <stdlib.h>
+
+#include <stdbool.h>
+
+#include <time.h>
+
+ 
+
+/**
+
+* Helper Structure
+
+* Represents autonomous collection units that gather resources for the player
+
+*/
+
+typedef struct Helper {
+
+    Vector2 position;        // Current position of helper
+
+    bool active;             // Whether this helper is currently active
+
+    Vector2 targetPosition;  // Store the target position (unused in current implementation)
+
+    bool trackingCollectBlock;  // Flag to indicate if tracking a collect block (unused)
+
+    int targetIndex;         // Index of the collect block this helper is targeting
+
+} Helper;
+
+ 
+
+int main(void)
+
+{
+
+    // Seed the random number generator
+
+    srand(time(NULL));
+
+ 
+
+    // Window and display configuration
+
+    const int screenWidth = 1920;
+
+    const int screenHeight = 1024;
+
+ 
+
+    // Player tile dimensions
+
+    int tile_width = 80;
+
+    int tile_length = 60;    // Note: This variable is unused
+
+    int tile_height = 40;
+
+    Color color1 = BLUE;
+
+    Color color2 = PURPLE;   // Color for second player
+
+ 
+
+    // First player position coordinates
+
+    int c_x = 0;
+
+    int c_y = 0;
+
+   
+
+    // Second player position coordinates
+
+    int c2_x = 100;
+
+    int c2_y = 100;
+
+    bool ambidexterity = false;  // Flag to indicate if Ambidexterity upgrade is active
+
+ 
+
+    // Resource collection block configuration
+
+    int collect_block_width = 20;
+
+    int collect_block_height = 20;
+
+    Vector2 collect_block_position = { (float)(rand() % (screenWidth - collect_block_width)),
+
+                                       (float)(rand() % (screenHeight - collect_block_height)) };
+
+    bool collected = false;  // Flag that's set when a resource is collected (unused)
+
+    int points = 0;          // Player's score/currency
+
+ 
+
+    // Initialize window and configure framerate
+
+    InitWindow(screenWidth, screenHeight, "Resource Collection Game");
+
+    SetWindowState(FLAG_BORDERLESS_WINDOWED_MODE);
+
+    SetTargetFPS(60);
+
+ 
+
+    // Helper units configuration
+
+    Helper helpers[20];      // Increased max helpers to 20 for Ambidexterity upgrade
+
+    int helperCount = 0;     // Current number of active helpers
+
+    int helperCap = 10;      // Initial helper cap (will double with Ambidexterity)
+
+    int helperCost = 5;      // Cost to purchase a new helper
+
+    Color helperColor = ORANGE;
+
+ 
+
+    // Base building configuration
+
+    int building_width = 50;
+
+    int building_height = 50;
+
+    Vector2 building_position = { 10, screenHeight - building_height - 10 };
+
+ 
+
+    // Menu UI configuration - Increase height further for the new upgrade button
+
+    int menu_width = 200;
+
+    int menu_height = 220;   // Increased height to fit all elements
+
+    int menu_x = screenWidth - menu_width - 10;
+
+    int menu_y = screenHeight - menu_height - 10;
+
+ 
+
+    // Collect blocks dynamic array initialization
+
+    Vector2* collectBlocks = (Vector2*)malloc(sizeof(Vector2));
+
+    int collectBlockCount = 1;
+
+    collectBlocks[0] = collect_block_position;
+
+   
+
+    // Upgrade system
+
+    int upgradeCost = 25;       // Cost to add a new collection point
+
+    int ambidexterityCost = 200; // Cost for the Ambidexterity upgrade
+
+ 
+
+    // Main game loop
+
+    while (!WindowShouldClose())
+
+    {
+
+        // First player movement controls (arrow keys)
+
+        if (IsKeyDown(KEY_RIGHT)) c_x += 5;
+
+        if (IsKeyDown(KEY_LEFT)) c_x -= 5;
+
+        if (IsKeyDown(KEY_UP)) c_y -= 5;
+
+        if (IsKeyDown(KEY_DOWN)) c_y += 5;
+
+ 
+
+        // Second player movement controls (WASD) - only active with Ambidexterity upgrade
+
+        if (ambidexterity) {
+
+            if (IsKeyDown(KEY_D)) c2_x += 5;
+
+            if (IsKeyDown(KEY_A)) c2_x -= 5;
+
+            if (IsKeyDown(KEY_W)) c2_y -= 5;
+
+            if (IsKeyDown(KEY_S)) c2_y += 5;
+
+        }
+
+ 
+
+        // Keep first player within screen boundaries
+
+        if (c_x < 0) c_x = 0;
+
+        if (c_y < 0) c_y = 0;
+
+        if (c_x > screenWidth - tile_width) c_x = screenWidth - tile_width;
+
+        if (c_y > screenHeight - tile_height) c_y = screenHeight - tile_height;
+
+ 
+
+        // Keep second player within screen boundaries
+
+        if (c2_x < 0) c2_x = 0;
+
+        if (c2_y < 0) c2_y = 0;
+
+        if (c2_x > screenWidth - tile_width) c2_x = screenWidth - tile_width;
+
+        if (c2_y > screenHeight - tile_height) c2_y = screenHeight - tile_height;
+
+ 
+
+        Rectangle tile1 = { c_x, c_y, tile_width, tile_height };
+
+        Rectangle tile2 = { c2_x, c2_y, tile_width, tile_height };
+
+       
+
+        // Check if players collect resources
+
+        for (int i = 0; i < collectBlockCount; i++) {
+
+            Rectangle collect_block = { collectBlocks[i].x, collectBlocks[i].y, collect_block_width, collect_block_height };
+
+           
+
+            // First player collection check
+
+            if (CheckCollisionRecs(tile1, collect_block)) {
+
+                collected = true;
+
+                points += 5;
+
+                // Respawn the collected resource at a random position
+
+                collectBlocks[i].x = (float)(rand() % (screenWidth - collect_block_width));
+
+                collectBlocks[i].y = (float)(rand() % (screenHeight - collect_block_height));
+
+            }
+
+           
+
+            // Second player collection check (only if Ambidexterity is active)
+
+            if (ambidexterity && CheckCollisionRecs(tile2, collect_block)) {
+
+                collected = true;
+
+                points += 5;
+
+                // Respawn the collected resource at a random position
+
+                collectBlocks[i].x = (float)(rand() % (screenWidth - collect_block_width));
+
+                collectBlocks[i].y = (float)(rand() % (screenHeight - collect_block_height));
+
+            }
+
+        }
+
+ 
+
+        // Buy Helper button interaction
+
+        Rectangle buyHelperButton = { menu_x + 10, menu_y + 20, 180, 30 };
+
+        if (CheckCollisionPointRec(GetMousePosition(), buyHelperButton) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+
+            if (points >= helperCost && helperCount < helperCap) {
+
+                points -= helperCost;
+
+                // Initialize new helper
+
+                helpers[helperCount].position = building_position;
+
+                helpers[helperCount].active = true;
+
+                helpers[helperCount].trackingCollectBlock = false;
+
+                helpers[helperCount].targetIndex = -1;  // No initial target
+
+                helperCount++;
+
+            }
+
+        }
+
+ 
+
+        // Upgrade button interaction (add collection points)
+
+        Rectangle upgradeButton = { menu_x + 10, menu_y + 90, 180, 30 };
+
+        if (CheckCollisionPointRec(GetMousePosition(), upgradeButton) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+
+            if (points >= upgradeCost) {
+
+                points -= upgradeCost;
+
+                collectBlockCount++;
+
+               
+
+                // Expand the dynamic array to accommodate the new collection point
+
+                collectBlocks = (Vector2*)realloc(collectBlocks, collectBlockCount * sizeof(Vector2));
+
+               
+
+                // Spawn a new collection point at a random position
+
+                collectBlocks[collectBlockCount - 1] = (Vector2){
+
+                    (float)(rand() % (screenWidth - collect_block_width)),
+
+                    (float)(rand() % (screenHeight - collect_block_height))
+
+                };
+
+            }
+
+        }
+
+ 
+
+        // Ambidexterity upgrade button interaction
+
+        Rectangle ambidexterityButton = { menu_x + 10, menu_y + 160, 180, 30 };
+
+        if (!ambidexterity && CheckCollisionPointRec(GetMousePosition(), ambidexterityButton) &&
+
+            IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+
+            if (points >= ambidexterityCost) {
+
+                points -= ambidexterityCost;
+
+                ambidexterity = true;
+
+                helperCap = 20;  // Double the helper cap
+
+            }
+
+        }
+
+ 
+
+        // Helper AI logic - each helper targets and collects resources
+
+        for (int i = 0; i < helperCount; i++) {
+
+            if (helpers[i].active) {
+
+                // Assign a random collection point if helper has no target
+
+                if (helpers[i].targetIndex == -1) {
+
+                    helpers[i].targetIndex = rand() % collectBlockCount;
+
+                }
+
+ 
+
+                // Get the target collection point position
+
+                Vector2 target = collectBlocks[helpers[i].targetIndex];
+
+ 
+
+                // Move helper toward target (simple pathfinding)
+
+                if (helpers[i].position.x < target.x)
+
+                    helpers[i].position.x += 1;
+
+                if (helpers[i].position.x > target.x)
+
+                    helpers[i].position.x -= 1;
+
+                if (helpers[i].position.y < target.y)
+
+                    helpers[i].position.y += 1;
+
+                if (helpers[i].position.y > target.y)
+
+                    helpers[i].position.y -= 1;
+
+ 
+
+                // Check if helper has reached its target
+
+                Rectangle collect_block = { target.x, target.y, collect_block_width, collect_block_height };
+
+                if (CheckCollisionRecs((Rectangle){helpers[i].position.x, helpers[i].position.y, 20, 20}, collect_block)) {
+
+                    points += 5;  // Award points for helper collection
+
+                   
+
+                    // Respawn the collected resource at a random position
+
+                    collectBlocks[helpers[i].targetIndex].x = (float)(rand() % (screenWidth - collect_block_width));
+
+                    collectBlocks[helpers[i].targetIndex].y = (float)(rand() % (screenHeight - collect_block_height));
+
+                   
+
+                    // Reset helper's target to find a new target next frame
+
+                    helpers[i].targetIndex = -1;
+
+                }
+
+            }
+
+        }
+
+ 
+
+        // Drawing section
+
+        BeginDrawing();
+
+        ClearBackground(BLACK);
+
+ 
+
+        // Draw first player
+
+        DrawRectangle(c_x, c_y, tile_width, tile_height, color1);
+
+       
+
+        // Draw second player (only if Ambidexterity is active)
+
+        if (ambidexterity) {
+
+            DrawRectangle(c2_x, c2_y, tile_width, tile_height, color2);
+
+        }
+
+ 
+
+        // Draw collection points
+
+        for (int i = 0; i < collectBlockCount; i++) {
+
+            DrawRectangle((int)collectBlocks[i].x, (int)collectBlocks[i].y, collect_block_width, collect_block_height, RAYWHITE);
+
+        }
+
+ 
+
+        // Draw base building
+
+        DrawRectangle((int)building_position.x, (int)building_position.y, building_width, building_height, DARKGRAY);
+
+        DrawText("Base", (int)building_position.x + 5, (int)building_position.y + 20, 10, WHITE);
+
+ 
+
+        // Draw menu UI - Rearranged to prevent overlapping
+
+        DrawRectangle(menu_x, menu_y, menu_width, menu_height, DARKGRAY);
+
+       
+
+        // Draw Buy Helper button and related text
+
+        DrawRectangle(menu_x + 10, menu_y + 20, 180, 30, BLUE);
+
+        DrawText("Buy Helper", menu_x + 20, menu_y + 25, 20, WHITE);
+
+        DrawText(TextFormat("Cost: %d", helperCost), menu_x + 10, menu_y + 60, 15, WHITE);
+
+       
+
+        // Draw Upgrade button and related text
+
+        DrawRectangle(menu_x + 10, menu_y + 90, 180, 30, GREEN);
+
+        DrawText("Upgrade", menu_x + 20, menu_y + 95, 20, WHITE);
+
+        DrawText(TextFormat("Cost: %d", upgradeCost), menu_x + 10, menu_y + 130, 15, WHITE);
+
+       
+
+        // Draw Ambidexterity button (or show that it's active)
+
+        if (!ambidexterity) {
+
+            DrawRectangle(menu_x + 10, menu_y + 160, 180, 30, PURPLE);
+
+            DrawText("Ambidexterity", menu_x + 20, menu_y + 165, 20, WHITE);
+
+            DrawText(TextFormat("Cost: %d", ambidexterityCost), menu_x + 10, menu_y + 200, 15, WHITE);
+
+        } else {
+
+            DrawRectangle(menu_x + 10, menu_y + 160, 180, 30, DARKPURPLE);
+
+            DrawText("Ambidexterity", menu_x + 20, menu_y + 165, 20, WHITE);
+
+            DrawText("ACTIVE", menu_x + 10, menu_y + 200, 15, GREEN);
+
+        }
+
+       
+
+        // Draw helper count
+
+        DrawText(TextFormat("Helpers: %d/%d", helperCount, helperCap), menu_x + 120, menu_y + 60, 15, WHITE);
+
+       
+
+        // Draw blocks count
+
+        DrawText(TextFormat("Blocks: %d", collectBlockCount), menu_x + 120, menu_y + 130, 15, WHITE);
+
+ 
+
+        // Draw helpers
+
+        for (int i = 0; i < helperCount; i++) {
+
+            if (helpers[i].active) {
+
+                DrawRectangle((int)helpers[i].position.x, (int)helpers[i].position.y, 20, 20, helperColor);
+
+            }
+
+        }
+
+ 
+
+        // Draw points counter
+
+        DrawText(TextFormat("Points: %d", points), 10, 10, 20, WHITE);
+
+ 
+
+        EndDrawing();
+
+    }
+
+ 
+
+    // Clean up resources
+
+    free(collectBlocks);
+
+    CloseWindow();
+
+   
+
+    return 0;
+
+}
